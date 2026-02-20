@@ -1,0 +1,13 @@
+{
+  "domain": "security_sentinel",
+  "name": "Security Sentinel",
+  "version": "0.1.0",
+  "documentation": "https://github.com/savino/ha-security-sentinel",
+  "issue_tracker": "https://github.com/savino/ha-security-sentinel/issues",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@savino"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "quality_scale": "custom"
+}

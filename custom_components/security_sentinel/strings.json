@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Security Sentinel — Setup",
+        "description": "Configure monitoring thresholds and notification service.",
+        "data": {
+          "scan_interval": "Scan Interval (seconds)",
+          "failed_login_threshold": "Failed Login Threshold",
+          "brute_force_window": "Brute-Force Detection Window (seconds)",
+          "notify_service": "HA Notify Service",
+          "geo_api_key": "ipinfo.io API Key (optional)"
+        }
+      },
+      "email": {
+        "title": "Email Alerts (optional)",
+        "description": "Configure SMTP to send email alerts for high/critical events.",
+        "data": {
+          "email_recipient": "Recipient Email Address",
+          "smtp_host": "SMTP Host",
+          "smtp_port": "SMTP Port",
+          "smtp_username": "SMTP Username",
+          "smtp_password": "SMTP Password"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Security Sentinel is already configured."
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the SMTP server.",
+      "invalid_threshold": "Threshold must be between 2 and 100.",
+      "unknown": "An unexpected error occurred."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Security Sentinel — Options",
+        "data": {
+          "scan_interval": "Scan Interval (seconds)",
+          "failed_login_threshold": "Failed Login Threshold",
+          "brute_force_window": "Brute-Force Detection Window (seconds)",
+          "notify_service": "HA Notify Service",
+          "geo_api_key": "ipinfo.io API Key (optional)",
+          "email_recipient": "Recipient Email Address",
+          "smtp_host": "SMTP Host",
+          "smtp_port": "SMTP Port",
+          "smtp_username": "SMTP Username",
+          "smtp_password": "SMTP Password"
+        }
+      }
+    }
+  }
+}
