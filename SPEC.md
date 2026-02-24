@@ -59,9 +59,9 @@ ha-security-sentinel/
 │       ├── geo_lookup.py        # IP geolocation with caching and fallback
 │       ├── actions.py           # Notification and email dispatcher
 │       ├── store.py             # Persistent event storage
-│       └── strings.json         # UI strings
-├── lovelace/
-│   └── security-sentinel-card.js  # Custom Lit-based Lovelace card
+│       ├── strings.json         # UI strings
+│       └── frontend/
+│           └── security-sentinel-card.js  # Custom Lovelace card (auto-copied to /config/www)
 ├── .github/
 │   └── workflows/
 │       └── ci.yml              # GitHub Actions CI
@@ -263,6 +263,14 @@ HTML email with table layout:
 
 ### 9.3 Card Installation (manual)
 
+Card JS file path in HA config directory:
+
+```
+/config/www/security-sentinel-card.js
+```
+
+Served URL used by Lovelace resources:
+
 ```yaml
 # configuration.yaml or resources section in Lovelace
 lovelace:
@@ -270,6 +278,8 @@ lovelace:
     - url: /local/security-sentinel-card.js
       type: module
 ```
+
+Note: the integration setup copies the bundled card automatically to `/config/www/security-sentinel-card.js`.
 
 Then in dashboard YAML:
 ```yaml

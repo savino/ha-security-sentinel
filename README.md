@@ -47,12 +47,26 @@ Copy the `custom_components/security_sentinel/` directory into your HA `config/c
 
 ## 📊 Lovelace Card
 
-Add the resource to your dashboard:
+Security Sentinel now installs the card file automatically to:
+
+- `/config/www/security-sentinel-card.js` (served by HA as `/local/security-sentinel-card.js`)
+
+After restarting HA, add this resource in **Settings → Dashboards → Resources** (or YAML):
+
+```yaml
+url: /local/security-sentinel-card.js
+type: module
+```
+
+Then add the card to your dashboard:
+
 ```yaml
 type: custom:security-sentinel-card
 title: Security Sentinel
 max_events: 15
 ```
+
+If the card does not appear, clear browser cache and hard-refresh the dashboard.
 
 See [SPEC.md § 9](SPEC.md#9-lovelace-card-security-sentinel-card) for full card options.
 
