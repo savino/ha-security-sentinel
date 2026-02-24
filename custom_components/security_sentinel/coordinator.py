@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -58,13 +61,38 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
         last = self._store.get_last_event()
         failed_logins = self._store.count_failed_logins(hours=24)
         threat_level = _calculate_threat_level(recent)
+        banned_ips = await self.hass.async_add_executor_job(self._read_banned_ips)
         return {
             "failed_logins": failed_logins,
             "last_event": last,
             "threat_level": threat_level,
             "recent_events": recent,
             "total_events": len(self._store.get_all_events()),
+            "banned_ips": banned_ips,
         }
+
+    def _read_banned_ips(self) -> list[dict[str, Any]]:
+        """Read the list of banned IPs from ip_bans.yaml."""
+        ban_file = Path(self.hass.config.path("ip_bans.yaml"))
+        if not ban_file.exists():
+            return []
+        try:
+            with ban_file.open() as fh:
+                data = yaml.safe_load(fh)
+            if not data or not isinstance(data, dict):
+                return []
+            return [
+                {
+                    "ip": ip,
+                    "banned_at": (
+                        info.get("banned_at", "") if isinstance(info, dict) else ""
+                    ),
+                }
+                for ip, info in data.items()
+            ]
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Could not read ip_bans.yaml: %s", err)
+            return []
 
     async def async_process_event(self, event: dict[str, Any]) -> None:
         """Enrich, store, dispatch, and refresh sensors for a new security event."""

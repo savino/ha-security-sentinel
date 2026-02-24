@@ -60,6 +60,7 @@ STORAGE_VERSION = 1
 SENSOR_FAILED_LOGINS = "failed_logins"
 SENSOR_LAST_EVENT = "last_event"
 SENSOR_THREAT_LEVEL = "threat_level"
+SENSOR_BANNED_IPS = "banned_ips"
 
 # Suspicious services to monitor
 SUSPICIOUS_SERVICES = [

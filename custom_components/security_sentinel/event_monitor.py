@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_BRUTE_FORCE_WINDOW,
@@ -112,10 +113,31 @@ class EventMonitor:
             device_id = event.data.get("device_id", "")
             if device_id and device_id not in self._known_device_ids:
                 self._known_device_ids.add(device_id)
+
+                device_reg = dr.async_get(self._hass)
+                device = device_reg.async_get(device_id)
+
+                device_info: dict[str, Any] = {"device_id": device_id}
+                detail_parts = [f"New device registered: {device_id}"]
+                if device:
+                    if device.name:
+                        device_info["name"] = device.name
+                        detail_parts.append(f"Name: {device.name}")
+                    if device.manufacturer:
+                        device_info["manufacturer"] = device.manufacturer
+                        detail_parts.append(f"Manufacturer: {device.manufacturer}")
+                    if device.model:
+                        device_info["model"] = device.model
+                        detail_parts.append(f"Model: {device.model}")
+                    if device.entry_type:
+                        device_info["entry_type"] = str(device.entry_type)
+                        detail_parts.append(f"Type: {device.entry_type}")
+
                 sec_event = {
                     "event_type": EVENT_NEW_DEVICE,
                     "ip": "N/A",
-                    "detail": f"New device registered: {device_id}",
+                    "detail": ", ".join(detail_parts),
+                    "device_info": device_info,
                     "severity": SEVERITY_LOW,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "geo": {"country": "Local", "city": "Internal"},
