@@ -1,7 +1,8 @@
 /**
  * Security Sentinel Card — Custom Lovelace Card for Home Assistant
- * Version: 0.1.1
- * Displays security events with geo enrichment, threat badge, and expandable rows.
+ * Version: 0.2.0
+ * Displays security events with geo enrichment, threat badge, expandable rows,
+ * banned IPs list with unban action, and enriched new-device events.
  */
 
 const SEVERITY_COLORS = {
@@ -28,12 +29,22 @@ function timeAgo(isoString) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 class SecuritySentinelCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
     this._config = {};
     this._expanded = new Set();
+    this._activeTab = 'events';
   }
 
   static getStubConfig() {
@@ -64,9 +75,98 @@ class SecuritySentinelCard extends HTMLElement {
     return events.slice(0, max_events);
   }
 
+  _getBannedIPs() {
+    const s = this._state('sensor.security_sentinel_banned_ips');
+    return s?.attributes?.banned_ips || [];
+  }
+
   _toggle(idx) {
     this._expanded.has(idx) ? this._expanded.delete(idx) : this._expanded.add(idx);
     this._render();
+  }
+
+  _unbanIP(ip) {
+    if (!this._hass) return;
+    this._hass.callService('security_sentinel', 'unban_ip', { ip_address: ip });
+  }
+
+  _setTab(tab) {
+    this._activeTab = tab;
+    this._render();
+  }
+
+  _renderEventsTab(events) {
+    if (events.length === 0) {
+      return `<div class="no-events">No recent security events \uD83C\uDF89</div>`;
+    }
+    return events.map((e, idx) => {
+      const expanded = this._expanded.has(idx);
+      const color    = SEVERITY_COLORS[e.severity] ?? '#607D8B';
+      const geo      = e.geo ?? {};
+      const flag     = countryFlag(geo.country_code || geo.country || '');
+      const ago      = timeAgo(e.timestamp);
+      const fullTs   = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+      const devInfo  = e.device_info ?? {};
+
+      let detailRows = `
+        <div class="geo-grid">
+          <span>\uD83C\uDF0D Country</span><span>${escapeHtml(geo.country || '?')} (${escapeHtml(geo.country_code || '?')})</span>
+          <span>\uD83C\uDFD9\uFE0F City</span><span>${escapeHtml(geo.city || '?')}</span>
+          <span>\uD83C\uDFE2 ISP / Org</span><span>${escapeHtml(geo.org || geo.isp || '?')}</span>
+          <span>\uD83D\uDCCD Region</span><span>${escapeHtml(geo.region || '?')}</span>
+          <span>\uD83D\uDD50 Timezone</span><span>${escapeHtml(geo.timezone || '?')}</span>
+          ${geo.lat != null ? `<span>\uD83D\uDDFA\uFE0F Coords</span><span>${geo.lat}, ${geo.lon}</span>` : ''}
+        </div>`;
+
+      // For NEW_DEVICE events, show device registry details
+      if (e.event_type === 'NEW_DEVICE' && Object.keys(devInfo).length > 0) {
+        detailRows += `
+        <div class="device-grid">
+          <span>\uD83D\uDCF1 Device ID</span><span>${escapeHtml(devInfo.device_id || '?')}</span>
+          ${devInfo.name        ? `<span>\uD83C\uDFF7\uFE0F Name</span><span>${escapeHtml(devInfo.name)}</span>` : ''}
+          ${devInfo.manufacturer ? `<span>\uD83C\uDFED Manufacturer</span><span>${escapeHtml(devInfo.manufacturer)}</span>` : ''}
+          ${devInfo.model       ? `<span>\uD83D\uDCE6 Model</span><span>${escapeHtml(devInfo.model)}</span>` : ''}
+          ${devInfo.entry_type  ? `<span>\uD83D\uDD16 Type</span><span>${escapeHtml(devInfo.entry_type)}</span>` : ''}
+        </div>`;
+      }
+
+      const detail = expanded ? `
+        <div class="evt-detail">
+          ${detailRows}
+          <div class="evt-msg">${escapeHtml(e.detail || '')}</div>
+          <div class="evt-ts">${fullTs}</div>
+        </div>` : '';
+
+      return `
+        <div class="evt-row" data-idx="${idx}">
+          <div class="evt-summary">
+            <span class="dot" style="background:${color}"></span>
+            <span class="evt-type">${escapeHtml(e.event_type || 'Unknown')}</span>
+            <span class="evt-ip">${escapeHtml(e.ip || 'N/A')} ${flag}</span>
+            <span class="evt-ago">${ago}</span>
+            <span class="arrow">${expanded ? '\u25B2' : '\u25BC'}</span>
+          </div>
+          ${detail}
+        </div>`;
+    }).join('');
+  }
+
+  _renderBannedTab(bannedIPs) {
+    if (bannedIPs.length === 0) {
+      return `<div class="no-events">No IPs currently banned \uD83D\uDC4D</div>`;
+    }
+    return bannedIPs.map(entry => {
+      const ip = entry.ip || entry;
+      const bannedAt = entry.banned_at ? new Date(entry.banned_at).toLocaleString() : '';
+      return `
+        <div class="ban-row">
+          <div class="ban-info">
+            <span class="ban-ip">${escapeHtml(ip)}</span>
+            ${bannedAt ? `<span class="ban-ts">\uD83D\uDD50 ${bannedAt}</span>` : ''}
+          </div>
+          <button class="unban-btn" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
+        </div>`;
+    }).join('');
   }
 
   _render() {
@@ -75,50 +175,23 @@ class SecuritySentinelCard extends HTMLElement {
     const failedSensor   = this._state('sensor.security_sentinel_failed_logins');
     const threatSensor   = this._state('sensor.security_sentinel_threat_level');
     const lastEvtSensor  = this._state('sensor.security_sentinel_last_event');
+    const bannedSensor   = this._state('sensor.security_sentinel_banned_ips');
 
     const failedCount   = failedSensor?.state  ?? '0';
     const threatLevel   = threatSensor?.state  ?? 'low';
     const threatColor   = SEVERITY_COLORS[threatLevel] ?? '#607D8B';
     const totalEvents   = threatSensor?.attributes?.total_events_loaded ?? 0;
     const lastEvtType   = lastEvtSensor?.state ?? 'None';
+    const bannedCount   = bannedSensor?.state  ?? '0';
     const events        = this._getEvents();
+    const bannedIPs     = this._getBannedIPs();
 
-    const eventsHTML = events.length === 0
-      ? `<div class="no-events">No recent security events \uD83C\uDF89</div>`
-      : events.map((e, idx) => {
-          const expanded = this._expanded.has(idx);
-          const color    = SEVERITY_COLORS[e.severity] ?? '#607D8B';
-          const geo      = e.geo ?? {};
-          const flag     = countryFlag(geo.country_code || geo.country || '');
-          const ago      = timeAgo(e.timestamp);
-          const fullTs   = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+    const isEvents = this._activeTab === 'events';
+    const isBanned = this._activeTab === 'banned';
 
-          const detail = expanded ? `
-            <div class="evt-detail">
-              <div class="geo-grid">
-                <span>\uD83C\uDF0D Country</span><span>${geo.country || '?'} (${geo.country_code || '?'})</span>
-                <span>\uD83C\uDFD9\uFE0F City</span><span>${geo.city || '?'}</span>
-                <span>\uD83C\uDFE2 ISP / Org</span><span>${geo.org || geo.isp || '?'}</span>
-                <span>\uD83D\uDCCD Region</span><span>${geo.region || '?'}</span>
-                <span>\uD83D\uDD50 Timezone</span><span>${geo.timezone || '?'}</span>
-                ${geo.lat != null ? `<span>\uD83D\uDDFA\uFE0F Coords</span><span>${geo.lat}, ${geo.lon}</span>` : ''}
-              </div>
-              <div class="evt-msg">${e.detail || ''}</div>
-              <div class="evt-ts">${fullTs}</div>
-            </div>` : '';
-
-          return `
-            <div class="evt-row" data-idx="${idx}">
-              <div class="evt-summary">
-                <span class="dot" style="background:${color}"></span>
-                <span class="evt-type">${e.event_type || 'Unknown'}</span>
-                <span class="evt-ip">${e.ip || 'N/A'} ${flag}</span>
-                <span class="evt-ago">${ago}</span>
-                <span class="arrow">${expanded ? '\u25B2' : '\u25BC'}</span>
-              </div>
-              ${detail}
-            </div>`;
-        }).join('');
+    const tabContent = isEvents
+      ? this._renderEventsTab(events)
+      : this._renderBannedTab(bannedIPs);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -127,11 +200,16 @@ class SecuritySentinelCard extends HTMLElement {
         .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
         .title  { font-size:1.1em; font-weight:bold; }
         .badge  { padding:3px 10px; border-radius:12px; color:#fff; font-size:.8em; font-weight:bold; text-transform:uppercase; }
-        .stats  { display:flex; gap:16px; background:var(--secondary-background-color,#f5f5f5); border-radius:8px; padding:10px 14px; margin-bottom:12px; }
+        .stats  { display:flex; gap:16px; background:var(--secondary-background-color,#f5f5f5); border-radius:8px; padding:10px 14px; margin-bottom:12px; flex-wrap:wrap; }
         .stat   { display:flex; flex-direction:column; align-items:center; }
         .stat-v { font-size:1.35em; font-weight:bold; }
         .stat-l { font-size:.72em; color:var(--secondary-text-color,#888); text-transform:uppercase; }
-        .sec-lbl{ font-size:.78em; font-weight:bold; text-transform:uppercase; color:var(--secondary-text-color,#888); letter-spacing:.05em; margin-bottom:6px; }
+        .tabs   { display:flex; gap:4px; margin-bottom:8px; border-bottom:2px solid var(--divider-color,#e0e0e0); }
+        .tab    { padding:6px 14px; cursor:pointer; font-size:.82em; font-weight:600; border-radius:4px 4px 0 0;
+                  color:var(--secondary-text-color,#888); border:none; background:none; text-transform:uppercase; letter-spacing:.04em; }
+        .tab.active { color:var(--primary-color,#03a9f4); border-bottom:2px solid var(--primary-color,#03a9f4); margin-bottom:-2px; }
+        .tab-badge { display:inline-block; background:var(--error-color,#f44336); color:#fff; border-radius:8px;
+                     padding:1px 6px; font-size:.72em; margin-left:4px; vertical-align:middle; }
         .list   { display:flex; flex-direction:column; gap:4px; }
         .evt-row{ border:1px solid var(--divider-color,#e0e0e0); border-radius:6px; overflow:hidden; }
         .evt-summary{ display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
@@ -144,34 +222,69 @@ class SecuritySentinelCard extends HTMLElement {
         .arrow  { font-size:.7em; color:var(--secondary-text-color,#aaa); }
         .evt-detail{ padding:10px 14px; background:var(--secondary-background-color,#f5f5f5);
                      border-top:1px solid var(--divider-color,#e0e0e0); }
-        .geo-grid{ display:grid; grid-template-columns:130px 1fr; gap:4px 12px; font-size:.82em; margin-bottom:8px; }
-        .geo-grid span:nth-child(odd){ color:var(--secondary-text-color,#888); font-weight:500; }
-        .evt-msg { font-size:.82em; margin-bottom:4px; }
+        .geo-grid, .device-grid {
+          display:grid; grid-template-columns:140px 1fr; gap:4px 12px; font-size:.82em; margin-bottom:8px;
+        }
+        .device-grid { margin-top:6px; padding-top:6px; border-top:1px dashed var(--divider-color,#ddd); }
+        .geo-grid span:nth-child(odd), .device-grid span:nth-child(odd){
+          color:var(--secondary-text-color,#888); font-weight:500;
+        }
+        .evt-msg { font-size:.82em; margin-bottom:4px; word-break:break-all; }
         .evt-ts  { font-size:.74em; color:var(--secondary-text-color,#aaa); }
         .no-events{ text-align:center; padding:20px; color:var(--secondary-text-color,#888); font-size:.9em; }
+        /* Banned IPs */
+        .ban-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
+                   padding:8px 12px; border:1px solid var(--divider-color,#e0e0e0);
+                   border-radius:6px; background:var(--card-background-color,#fff); }
+        .ban-info { display:flex; flex-direction:column; gap:2px; }
+        .ban-ip  { font-family:monospace; font-size:.88em; font-weight:600; }
+        .ban-ts  { font-size:.74em; color:var(--secondary-text-color,#aaa); }
+        .unban-btn { padding:4px 12px; border-radius:6px; border:none; cursor:pointer;
+                     background:var(--error-color,#f44336); color:#fff; font-size:.78em; font-weight:bold;
+                     white-space:nowrap; }
+        .unban-btn:hover { opacity:.85; }
       </style>
       <ha-card>
         <div class="header">
-          <div class="title">\uD83D\uDEE1\uFE0F ${this._config.title}</div>
-          <span class="badge" style="background:${threatColor}">${threatLevel}</span>
+          <div class="title">\uD83D\uDEE1\uFE0F ${escapeHtml(this._config.title)}</div>
+          <span class="badge" style="background:${threatColor}">${escapeHtml(threatLevel)}</span>
         </div>
         <div class="stats">
-          <div class="stat"><span class="stat-v">${failedCount}</span><span class="stat-l">Failed Logins (24h)</span></div>
+          <div class="stat"><span class="stat-v">${escapeHtml(failedCount)}</span><span class="stat-l">Failed Logins (24h)</span></div>
           <div class="stat"><span class="stat-v">${totalEvents}</span><span class="stat-l">Total Events</span></div>
-          <div class="stat"><span class="stat-v" style="font-size:.88em">${lastEvtType}</span><span class="stat-l">Last Event</span></div>
+          <div class="stat"><span class="stat-v" style="font-size:.88em">${escapeHtml(lastEvtType)}</span><span class="stat-l">Last Event</span></div>
+          <div class="stat"><span class="stat-v" style="color:${parseInt(bannedCount)>0?'#f44336':'inherit'}">${escapeHtml(bannedCount)}</span><span class="stat-l">Banned IPs</span></div>
         </div>
-        <div class="sec-lbl">Recent Events</div>
-        <div class="list" id="list">${eventsHTML}</div>
+        <div class="tabs">
+          <button class="tab${isEvents ? ' active' : ''}" id="tab-events">
+            Recent Events
+            ${events.length > 0 ? `<span class="tab-badge">${events.length}</span>` : ''}
+          </button>
+          <button class="tab${isBanned ? ' active' : ''}" id="tab-banned">
+            Banned IPs
+            ${bannedIPs.length > 0 ? `<span class="tab-badge" style="background:#607D8B">${bannedIPs.length}</span>` : ''}
+          </button>
+        </div>
+        <div class="list" id="list">${tabContent}</div>
       </ha-card>`;
+
+    this.shadowRoot.querySelector('#tab-events')
+      ?.addEventListener('click', () => this._setTab('events'));
+    this.shadowRoot.querySelector('#tab-banned')
+      ?.addEventListener('click', () => this._setTab('banned'));
 
     this.shadowRoot.querySelectorAll('.evt-summary').forEach(el => {
       el.addEventListener('click', () => {
         this._toggle(parseInt(el.closest('.evt-row').dataset.idx, 10));
       });
     });
+
+    this.shadowRoot.querySelectorAll('.unban-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._unbanIP(btn.dataset.ip));
+    });
   }
 
-  getCardSize() { return 4; }
+  getCardSize() { return 5; }
 }
 
 customElements.define('security-sentinel-card', SecuritySentinelCard);
@@ -180,6 +293,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'security-sentinel-card',
   name: 'Security Sentinel Card',
-  description: 'Timeline card for the Security Sentinel integration — shows events, geo data and threat level.',
+  description: 'Timeline card for the Security Sentinel integration — shows events, geo data, threat level, and banned IPs.',
   preview: false,
 });

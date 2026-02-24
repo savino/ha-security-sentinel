@@ -10,7 +10,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_FAILED_LOGINS, SENSOR_LAST_EVENT, SENSOR_THREAT_LEVEL, VERSION
+from .const import (
+    DOMAIN,
+    SENSOR_BANNED_IPS,
+    SENSOR_FAILED_LOGINS,
+    SENSOR_LAST_EVENT,
+    SENSOR_THREAT_LEVEL,
+    VERSION,
+)
 from .coordinator import SecuritySentinelCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +40,7 @@ async def async_setup_entry(
         FailedLoginsSensor(coordinator, entry),
         LastEventSensor(coordinator, entry),
         ThreatLevelSensor(coordinator, entry),
+        BannedIPsSensor(coordinator, entry),
     ])
 
 
@@ -130,4 +138,27 @@ class ThreatLevelSensor(_BaseSentinelSensor):
             "component_version": VERSION,
             "total_events_loaded": self._data.get("total_events", 0),
             "recent_events": self._data.get("recent_events", [])[:10],
+        }
+
+
+class BannedIPsSensor(_BaseSentinelSensor):
+    """Number and list of IPs currently banned by Home Assistant."""
+
+    _attr_name = "Security Sentinel Banned IPs"
+    _attr_icon = "mdi:shield-lock"
+    _attr_native_unit_of_measurement = "IPs"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: SecuritySentinelCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_BANNED_IPS)
+
+    @property
+    def native_value(self) -> int:
+        return len(self._data.get("banned_ips", []))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "component_version": VERSION,
+            "banned_ips": self._data.get("banned_ips", []),
         }
