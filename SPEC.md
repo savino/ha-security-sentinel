@@ -266,6 +266,11 @@ HTML email with table layout:
 
 ### 9.3 Card Installation (manual)
 
+Repository-type clarification:
+
+- HACS **Dashboard/Plugin** repositories place frontend files under `www/community` and are usually referenced via `/hacsfiles/...` or `/local/...`.
+- Security Sentinel is a HACS **Integration** repository, so its Lovelace resource must still be added in Dashboard Resources.
+
 Card JS file path in HA config directory:
 
 ```
@@ -282,7 +287,14 @@ lovelace:
       type: module
 ```
 
-Note: the integration setup copies the bundled card automatically to `/config/www/security-sentinel-card.js`.
+Note: after the integration is set up, startup copies the bundled card automatically to `/config/www/security-sentinel-card.js`.
+
+Recommended sequence:
+
+1. Install/update integration
+2. Restart HA
+3. Add/setup Security Sentinel integration
+4. Add resource URL `/local/security-sentinel-card.js`
 
 Then in dashboard YAML:
 ```yaml

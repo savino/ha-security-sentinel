@@ -47,11 +47,20 @@ Copy the `custom_components/security_sentinel/` directory into your HA `config/c
 
 ## 📊 Lovelace Card
 
-Security Sentinel now installs the card file automatically to:
+Important distinction (from HACS docs):
+
+- **Dashboard/Plugin repositories** (for example `scheduler-card`, `simple-weather-card`, `modern-circular-gauge`) are installed by HACS under `www/community` and typically use `/hacsfiles/...` or `/local/...` resource paths.
+- **This repository is an Integration repository** (`custom_components/...`). HACS installs backend files only; frontend resource registration is still your responsibility.
+
+For Security Sentinel, the integration setup copies the card file automatically to:
 
 - `/config/www/security-sentinel-card.js` (served by HA as `/local/security-sentinel-card.js`)
 
-After restarting HA, add this resource in **Settings → Dashboards → Resources** (or YAML):
+### Required steps (Security Sentinel)
+
+1. Install/update the integration and restart Home Assistant.
+2. Add Security Sentinel integration in **Settings → Devices & Services** (this triggers the card file copy).
+3. Add this dashboard resource in **Settings → Dashboards → Resources** (or YAML):
 
 ```yaml
 url: /local/security-sentinel-card.js
