@@ -1,7 +1,7 @@
 {
   "domain": "security_sentinel",
   "name": "Security Sentinel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "documentation": "https://github.com/savino/ha-security-sentinel",
   "issue_tracker": "https://github.com/savino/ha-security-sentinel/issues",
   "requirements": [],

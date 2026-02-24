@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_FAILED_LOGINS, SENSOR_LAST_EVENT, SENSOR_THREAT_LEVEL
+from .const import DOMAIN, SENSOR_FAILED_LOGINS, SENSOR_LAST_EVENT, SENSOR_THREAT_LEVEL, VERSION
 from .coordinator import SecuritySentinelCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 _DEVICE_INFO_BASE = {
     "manufacturer": "Community",
     "model": "Security Sentinel",
-    "sw_version": "0.1.0",
+    "sw_version": VERSION,
 }
 
 
@@ -77,6 +77,7 @@ class FailedLoginsSensor(_BaseSentinelSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         last = self._data.get("last_event")
         return {
+            "component_version": VERSION,
             "last_ip": last.get("ip") if last else None,
             "last_time": last.get("timestamp") if last else None,
             "recent_events": self._data.get("recent_events", [])[:10],
@@ -101,6 +102,7 @@ class LastEventSensor(_BaseSentinelSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         last = self._data.get("last_event") or {}
         return {
+            "component_version": VERSION,
             "ip": last.get("ip"),
             "geo": last.get("geo", {}),
             "detail": last.get("detail"),
@@ -125,6 +127,7 @@ class ThreatLevelSensor(_BaseSentinelSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
+            "component_version": VERSION,
             "total_events_loaded": self._data.get("total_events", 0),
             "recent_events": self._data.get("recent_events", [])[:10],
         }
