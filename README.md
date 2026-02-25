@@ -67,17 +67,227 @@ url: /local/security-sentinel-card.js
 type: module
 ```
 
-Then add the card to your dashboard:
+If the card does not appear, clear browser cache and hard-refresh the dashboard.
+
+---
+
+### Card Configuration Reference
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `type` | string | — | **Required.** Must be `custom:security-sentinel-card` |
+| `title` | string | `Security Sentinel` | Card title shown in the header |
+| `max_events` | int | `10` | Maximum number of events to display in the timeline |
+| `severity_filter` | list\<string\> | `[]` (all) | Only show events matching these severity levels: `low`, `medium`, `high`, `critical` |
+
+---
+
+### Examples
+
+#### Minimal — default settings
+
+The simplest possible configuration; all options fall back to their defaults.
+
+```yaml
+type: custom:security-sentinel-card
+```
+
+---
+
+#### Standard — custom title and event limit
+
+Show the last 20 events with a descriptive title.
+
+```yaml
+type: custom:security-sentinel-card
+title: 🛡️ Home Security Monitor
+max_events: 20
+```
+
+---
+
+#### High-priority only — filter by severity
+
+Only display `high` and `critical` severity events to reduce noise on a security-focused dashboard.
+
+```yaml
+type: custom:security-sentinel-card
+title: Critical Threats
+max_events: 5
+severity_filter:
+  - high
+  - critical
+```
+
+---
+
+#### All severity levels — explicit filter
+
+Show every event regardless of severity (equivalent to omitting `severity_filter`).
+
+```yaml
+type: custom:security-sentinel-card
+title: All Security Events
+max_events: 50
+severity_filter:
+  - low
+  - medium
+  - high
+  - critical
+```
+
+---
+
+#### Medium-and-above — balanced view
+
+A common production setup: ignore informational `low` events while still showing `medium` anomalies.
 
 ```yaml
 type: custom:security-sentinel-card
 title: Security Sentinel
 max_events: 15
+severity_filter:
+  - medium
+  - high
+  - critical
 ```
 
-If the card does not appear, clear browser cache and hard-refresh the dashboard.
+---
 
-See [SPEC.md § 9](SPEC.md#9-lovelace-card-security-sentinel-card) for full card options.
+### Full Dashboard YAML Example
+
+Below is a complete Lovelace dashboard view containing the Security Sentinel card alongside complementary entity cards for at-a-glance security monitoring.
+
+```yaml
+title: Security Dashboard
+views:
+  - title: Security
+    icon: mdi:shield-lock
+    cards:
+
+      # ── Security Sentinel main card ────────────────────────────
+      - type: custom:security-sentinel-card
+        title: 🛡️ Security Sentinel
+        max_events: 20
+        severity_filter:
+          - medium
+          - high
+          - critical
+
+      # ── Sensor summary row ─────────────────────────────────────
+      - type: entities
+        title: Sensor Summary
+        entities:
+          - entity: sensor.security_sentinel_failed_logins
+            name: Failed Logins (24 h)
+          - entity: sensor.security_sentinel_threat_level
+            name: Threat Level
+          - entity: sensor.security_sentinel_last_event
+            name: Last Event Type
+          - entity: sensor.security_sentinel_banned_ips
+            name: Banned IPs
+
+      # ── Failed logins gauge ────────────────────────────────────
+      - type: gauge
+        entity: sensor.security_sentinel_failed_logins
+        name: Failed Logins
+        min: 0
+        max: 50
+        severity:
+          green: 0
+          yellow: 5
+          red: 20
+```
+
+---
+
+### Automation Example
+
+Trigger a mobile notification whenever the threat level reaches `critical`:
+
+```yaml
+automation:
+  - alias: "Alert on critical threat"
+    trigger:
+      - platform: state
+        entity_id: sensor.security_sentinel_threat_level
+        to: "critical"
+    action:
+      - service: notify.mobile_app_myphone
+        data:
+          title: "🚨 Security Sentinel"
+          message: "Critical threat level detected!"
+```
+
+---
+
+### Sensor Attributes (used by the card)
+
+The card reads data directly from four sensor entities created by the integration:
+
+**`sensor.security_sentinel_failed_logins`** — state: integer count of failed logins in the last 24 hours
+
+```json
+{
+  "component_version": "0.2.0",
+  "last_ip": "203.0.113.42",
+  "last_time": "2026-02-25T12:34:56+00:00",
+  "recent_events": [
+    {
+      "event_type": "AUTH_FAILED",
+      "ip": "203.0.113.42",
+      "severity": "medium",
+      "timestamp": "2026-02-25T12:34:56+00:00",
+      "detail": "Failed login attempt #3",
+      "geo": {
+        "country": "China",
+        "country_code": "CN",
+        "city": "Beijing",
+        "org": "AS4134 Chinanet",
+        "region": "Beijing",
+        "timezone": "Asia/Shanghai",
+        "lat": 39.9042,
+        "lon": 116.4074
+      }
+    }
+  ]
+}
+```
+
+**`sensor.security_sentinel_threat_level`** — state: `low` | `medium` | `high` | `critical`
+
+```json
+{
+  "component_version": "0.2.0",
+  "total_events_loaded": 42,
+  "recent_events": [ "..." ]
+}
+```
+
+**`sensor.security_sentinel_last_event`** — state: last event type string
+
+```json
+{
+  "component_version": "0.2.0",
+  "ip": "203.0.113.42",
+  "geo": { "country": "China", "city": "Beijing", "org": "AS4134 Chinanet" },
+  "detail": "Brute-force threshold reached (5 attempts in 60 s)",
+  "severity": "critical",
+  "timestamp": "2026-02-25T12:35:10+00:00"
+}
+```
+
+**`sensor.security_sentinel_banned_ips`** — state: integer count of currently banned IPs
+
+```json
+{
+  "banned_ips": [
+    { "ip": "203.0.113.42", "banned_at": "2026-02-25T12:35:10+00:00" }
+  ]
+}
+```
+
+See [SPEC.md § 9](SPEC.md#9-lovelace-card-security-sentinel-card) for full card specification.
 
 ## 🗺️ Roadmap
 

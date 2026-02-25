@@ -1,7 +1,7 @@
 """Constants for Security Sentinel integration."""
 
 DOMAIN = "security_sentinel"
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 # Config keys
 CONF_SCAN_INTERVAL = "scan_interval"

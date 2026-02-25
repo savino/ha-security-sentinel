@@ -1,6 +1,6 @@
 # Security Sentinel — Technical & Functional Specification
 
-> **Version:** 0.1.1 | **Status:** Draft | **Last Updated:** 2026-02-20
+> **Version:** 0.2.0 | **Status:** Draft | **Last Updated:** 2026-02-25
 
 ---
 
@@ -157,7 +157,7 @@ Raw IP
 **`sensor.security_sentinel_failed_logins`**
 ```json
 {
-  "component_version": "0.1.1",
+  "component_version": "0.2.0",
   "last_ip": "1.2.3.4",
   "last_time": "2026-02-20T10:00:00+00:00",
   "recent_events": [ ... ]
@@ -167,7 +167,7 @@ Raw IP
 **`sensor.security_sentinel_last_event`**
 ```json
 {
-  "component_version": "0.1.1",
+  "component_version": "0.2.0",
   "ip": "1.2.3.4",
   "geo": { "country": "Russia", "city": "Moscow", "org": "AS12345 Rostelecom" },
   "detail": "Failed login attempt #3",
@@ -179,7 +179,7 @@ Raw IP
 **`sensor.security_sentinel_threat_level`**
 ```json
 {
-  "component_version": "0.1.1",
+  "component_version": "0.2.0",
   "total_events_loaded": 42,
   "recent_events": [ ... ]
 }
