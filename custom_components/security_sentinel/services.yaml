@@ -1,0 +1,10 @@
+unban_ip:
+  name: Unban IP address
+  description: Remove an IP address from Home Assistant's ip_bans.yaml.
+  fields:
+    ip_address:
+      name: IP address
+      description: The IP address to remove from the ban list.
+      required: true
+      selector:
+        text:
