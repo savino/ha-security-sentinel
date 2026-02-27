@@ -1,7 +1,12 @@
 """Constants for Security Sentinel integration."""
+import json
+from pathlib import Path
 
 DOMAIN = "security_sentinel"
-VERSION = "0.2.0"
+try:
+    VERSION: str = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
+except (OSError, json.JSONDecodeError, KeyError):
+    VERSION = "unknown"
 
 # Config keys
 CONF_SCAN_INTERVAL = "scan_interval"
