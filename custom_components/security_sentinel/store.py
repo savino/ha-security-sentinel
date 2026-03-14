@@ -67,6 +67,20 @@ class EventStore:
         """Return the most recent event or None."""
         return self._events[-1] if self._events else None
 
+    def get_events_by_ip(self, ip: str) -> list[dict[str, Any]]:
+        """Return all stored events for a specific IP, newest first."""
+        return list(reversed([e for e in self._events if e.get("ip") == ip]))
+
+    def get_latest_geo_for_ip(self, ip: str) -> dict[str, Any]:
+        """Return the most recently recorded geo snapshot for an IP."""
+        for event in reversed(self._events):
+            if event.get("ip") == ip:
+                geo = event.get("geo") or {}
+                country = geo.get("country", "")
+                if country and country not in ("Unknown", "Local", ""):
+                    return geo
+        return {}
+
     @staticmethod
     def _parse_ts(ts: str) -> float:
         """Parse ISO timestamp string to Unix float, return 0.0 on failure."""
