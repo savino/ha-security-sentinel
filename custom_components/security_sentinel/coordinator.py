@@ -61,7 +61,8 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
         last = self._store.get_last_event()
         failed_logins = self._store.count_failed_logins(hours=24)
         threat_level = _calculate_threat_level(recent)
-        banned_ips = await self.hass.async_add_executor_job(self._read_banned_ips)
+        raw_banned = await self.hass.async_add_executor_job(self._read_banned_ips)
+        banned_ips = await self._async_enrich_banned_ips(raw_banned)
         return {
             "failed_logins": failed_logins,
             "last_event": last,
@@ -93,6 +94,28 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Could not read ip_bans.yaml: %s", err)
             return []
+
+    async def _async_enrich_banned_ips(
+        self, raw_bans: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Enrich each banned IP entry with geo data and event history dossier."""
+        geo_api_key = self._entry.data.get(CONF_GEO_API_KEY, "")
+        enriched: list[dict[str, Any]] = []
+        for ban in raw_bans:
+            ip = ban["ip"]
+            # Pull the historical snapshot from stored events (preserves point-in-time geo)
+            ip_events = self._store.get_events_by_ip(ip)
+            geo = self._store.get_latest_geo_for_ip(ip)
+            # If no geo found in stored events, fetch a live lookup as a fallback
+            if not geo and ip not in ("internal", "N/A", ""):
+                geo = await async_get_geo_info(self.hass, ip, geo_api_key)
+            enriched.append({
+                **ban,
+                "geo": geo,
+                "attempt_count": len(ip_events),
+                "events": ip_events[:20],
+            })
+        return enriched
 
     async def async_process_event(self, event: dict[str, Any]) -> None:
         """Enrich, store, dispatch, and refresh sensors for a new security event."""

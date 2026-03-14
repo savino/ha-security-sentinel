@@ -44,6 +44,7 @@ class SecuritySentinelCard extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this._config = {};
     this._expanded = new Set();
+    this._bannedExpanded = new Set();
     this._activeTab = 'events';
   }
 
@@ -88,6 +89,11 @@ class SecuritySentinelCard extends HTMLElement {
   _unbanIP(ip) {
     if (!this._hass) return;
     this._hass.callService('security_sentinel', 'unban_ip', { ip_address: ip });
+  }
+
+  _toggleBanned(ip) {
+    this._bannedExpanded.has(ip) ? this._bannedExpanded.delete(ip) : this._bannedExpanded.add(ip);
+    this._render();
   }
 
   _setTab(tab) {
@@ -156,15 +162,58 @@ class SecuritySentinelCard extends HTMLElement {
       return `<div class="no-events">No IPs currently banned \uD83D\uDC4D</div>`;
     }
     return bannedIPs.map(entry => {
-      const ip = entry.ip || entry;
+      const ip       = entry.ip || entry;
       const bannedAt = entry.banned_at ? new Date(entry.banned_at).toLocaleString() : '';
+      const geo      = entry.geo || {};
+      const flag     = countryFlag(geo.country_code || geo.country || '');
+      const attempts = entry.attempt_count || 0;
+      const events   = entry.events || [];
+      const expanded = this._bannedExpanded.has(ip);
+
+      const geoSection = `
+        <div class="geo-grid">
+          <span>\uD83C\uDF0D Country</span><span>${escapeHtml(geo.country || '?')} ${geo.country_code ? '(' + escapeHtml(geo.country_code) + ')' : ''}</span>
+          <span>\uD83C\uDFD9\uFE0F City</span><span>${escapeHtml(geo.city || '?')}</span>
+          <span>\uD83C\uDFE2 ISP / Org</span><span>${escapeHtml(geo.org || geo.isp || '?')}</span>
+          ${geo.region ? `<span>\uD83D\uDCCD Region</span><span>${escapeHtml(geo.region)}</span>` : ''}
+          ${geo.timezone ? `<span>\uD83D\uDD50 Timezone</span><span>${escapeHtml(geo.timezone)}</span>` : ''}
+          ${geo.lat != null ? `<span>\uD83D\uDDFA\uFE0F Coords</span><span>${geo.lat}, ${geo.lon}</span>` : ''}
+        </div>`;
+
+      const historySection = events.length > 0 ? `
+        <div class="ban-history">
+          <div class="ban-history-title">\uD83D\uDCC5 Access attempt history (${events.length})</div>
+          ${events.map(ev => `
+            <div class="ban-evt">
+              <span class="ban-evt-type">${escapeHtml(ev.event_type || '')}</span>
+              <span class="ban-evt-ts">${ev.timestamp ? new Date(ev.timestamp).toLocaleString() : ''}</span>
+              <span class="ban-evt-detail">${escapeHtml(ev.detail || '')}</span>
+            </div>`).join('')}
+        </div>` : '';
+
+      const detail = expanded ? `
+        <div class="ban-dossier">
+          ${geoSection}
+          ${historySection}
+        </div>` : '';
+
       return `
-        <div class="ban-row">
-          <div class="ban-info">
-            <span class="ban-ip">${escapeHtml(ip)}</span>
-            ${bannedAt ? `<span class="ban-ts">\uD83D\uDD50 ${bannedAt}</span>` : ''}
+        <div class="ban-row-wrap" data-ip="${escapeHtml(ip)}">
+          <div class="ban-row">
+            <div class="ban-info" style="cursor:pointer" aria-expanded="${expanded}">
+              <div class="ban-header">
+                <span class="ban-flag">${flag}</span>
+                <span class="ban-ip">${escapeHtml(ip)}</span>
+                ${geo.country ? `<span class="ban-country">${escapeHtml(geo.country)}</span>` : ''}
+                ${attempts > 0 ? `<span class="ban-attempts">${attempts} attempt${attempts !== 1 ? 's' : ''}</span>` : ''}
+                <span class="arrow">${expanded ? '\u25B2' : '\u25BC'}</span>
+              </div>
+              ${bannedAt ? `<div class="ban-ts">\uD83D\uDD12 Banned: ${bannedAt}</div>` : ''}
+              ${geo.city || geo.org || geo.isp ? `<div class="ban-geo-brief">${escapeHtml(geo.city || '')}${geo.city && (geo.org || geo.isp) ? ' \u2022 ' : ''}${escapeHtml(geo.org || geo.isp || '')}</div>` : ''}
+            </div>
+            <button class="unban-btn" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
           </div>
-          <button class="unban-btn" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
+          ${detail}
         </div>`;
     }).join('');
   }
@@ -233,15 +282,33 @@ class SecuritySentinelCard extends HTMLElement {
         .evt-ts  { font-size:.74em; color:var(--secondary-text-color,#aaa); }
         .no-events{ text-align:center; padding:20px; color:var(--secondary-text-color,#888); font-size:.9em; }
         /* Banned IPs */
+        .ban-row-wrap { border:1px solid var(--divider-color,#e0e0e0); border-radius:6px; overflow:hidden; }
         .ban-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
-                   padding:8px 12px; border:1px solid var(--divider-color,#e0e0e0);
-                   border-radius:6px; background:var(--card-background-color,#fff); }
-        .ban-info { display:flex; flex-direction:column; gap:2px; }
+                   padding:8px 12px; background:var(--card-background-color,#fff); }
+        .ban-row:hover { background:var(--secondary-background-color,#f9f9f9); }
+        .ban-info { display:flex; flex-direction:column; gap:2px; flex:1; }
+        .ban-header { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+        .ban-flag { font-size:1.1em; }
         .ban-ip  { font-family:monospace; font-size:.88em; font-weight:600; }
+        .ban-country { font-size:.8em; color:var(--secondary-text-color,#666); }
+        .ban-attempts { font-size:.74em; background:var(--error-color,#f44336); color:#fff;
+                        border-radius:8px; padding:1px 6px; }
         .ban-ts  { font-size:.74em; color:var(--secondary-text-color,#aaa); }
+        .ban-geo-brief { font-size:.78em; color:var(--secondary-text-color,#777); }
+        .ban-dossier { padding:10px 14px; background:var(--secondary-background-color,#f5f5f5);
+                       border-top:1px solid var(--divider-color,#e0e0e0); }
+        .ban-history { margin-top:8px; padding-top:8px; border-top:1px dashed var(--divider-color,#ddd); }
+        .ban-history-title { font-size:.8em; font-weight:600; color:var(--secondary-text-color,#666);
+                             margin-bottom:6px; }
+        .ban-evt { display:grid; grid-template-columns:auto 1fr; gap:2px 8px; font-size:.78em;
+                   padding:4px 0; border-bottom:1px solid var(--divider-color,#eee); }
+        .ban-evt:last-child { border-bottom:none; }
+        .ban-evt-type { font-weight:600; grid-row:1; }
+        .ban-evt-ts { color:var(--secondary-text-color,#aaa); grid-row:1; text-align:right; }
+        .ban-evt-detail { grid-column:1/-1; color:var(--secondary-text-color,#666); word-break:break-all; }
         .unban-btn { padding:4px 12px; border-radius:6px; border:none; cursor:pointer;
                      background:var(--error-color,#f44336); color:#fff; font-size:.78em; font-weight:bold;
-                     white-space:nowrap; }
+                     white-space:nowrap; flex-shrink:0; }
         .unban-btn:hover { opacity:.85; }
       </style>
       <ha-card>
@@ -279,8 +346,17 @@ class SecuritySentinelCard extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelectorAll('.ban-row-wrap').forEach(el => {
+      el.querySelector('.ban-info')?.addEventListener('click', () => {
+        this._toggleBanned(el.dataset.ip);
+      });
+    });
+
     this.shadowRoot.querySelectorAll('.unban-btn').forEach(btn => {
-      btn.addEventListener('click', () => this._unbanIP(btn.dataset.ip));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._unbanIP(btn.dataset.ip);
+      });
     });
   }
 
