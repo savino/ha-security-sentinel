@@ -101,6 +101,37 @@ class SecuritySentinelCard extends HTMLElement {
     this._render();
   }
 
+  _handleListClick(event) {
+    const actionTarget = event.target.closest('[data-action]');
+    if (!actionTarget) return;
+
+    const { action, idx, ip } = actionTarget.dataset;
+    if (action === 'toggle-event' && idx != null) {
+      this._toggle(parseInt(idx, 10));
+      return;
+    }
+
+    if (action === 'toggle-banned' && ip) {
+      this._toggleBanned(ip);
+      return;
+    }
+
+    if (action === 'unban' && ip) {
+      event.stopPropagation();
+      this._unbanIP(ip);
+    }
+  }
+
+  _handleListKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    const actionTarget = event.target.closest('[data-action="toggle-event"]');
+    if (!actionTarget) return;
+
+    event.preventDefault();
+    this._handleListClick(event);
+  }
+
   _renderEventsTab(events) {
     if (events.length === 0) {
       return `<div class="no-events">No recent security events \uD83C\uDF89</div>`;
@@ -145,7 +176,7 @@ class SecuritySentinelCard extends HTMLElement {
 
       return `
         <div class="evt-row" data-idx="${idx}">
-          <div class="evt-summary">
+          <div class="evt-summary" data-action="toggle-event" data-idx="${idx}" role="button" tabindex="0" aria-expanded="${expanded}">
             <span class="dot" style="background:${color}"></span>
             <span class="evt-type">${escapeHtml(e.event_type || 'Unknown')}</span>
             <span class="evt-ip">${escapeHtml(e.ip || 'N/A')} ${flag}</span>
@@ -200,7 +231,7 @@ class SecuritySentinelCard extends HTMLElement {
       return `
         <div class="ban-row-wrap" data-ip="${escapeHtml(ip)}">
           <div class="ban-row">
-            <div class="ban-info" style="cursor:pointer" aria-expanded="${expanded}">
+            <button class="ban-info" type="button" data-action="toggle-banned" data-ip="${escapeHtml(ip)}" aria-expanded="${expanded}">
               <div class="ban-header">
                 <span class="ban-flag">${flag}</span>
                 <span class="ban-ip">${escapeHtml(ip)}</span>
@@ -210,8 +241,8 @@ class SecuritySentinelCard extends HTMLElement {
               </div>
               ${bannedAt ? `<div class="ban-ts">\uD83D\uDD12 Banned: ${bannedAt}</div>` : ''}
               ${geo.city || geo.org || geo.isp ? `<div class="ban-geo-brief">${escapeHtml(geo.city || '')}${geo.city && (geo.org || geo.isp) ? ' \u2022 ' : ''}${escapeHtml(geo.org || geo.isp || '')}</div>` : ''}
-            </div>
-            <button class="unban-btn" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
+            </button>
+            <button class="unban-btn" type="button" data-action="unban" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
           </div>
           ${detail}
         </div>`;
@@ -286,7 +317,8 @@ class SecuritySentinelCard extends HTMLElement {
         .ban-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
                    padding:8px 12px; background:var(--card-background-color,#fff); }
         .ban-row:hover { background:var(--secondary-background-color,#f9f9f9); }
-        .ban-info { display:flex; flex-direction:column; gap:2px; flex:1; }
+        .ban-info { display:flex; flex-direction:column; gap:2px; flex:1; padding:0; border:none;
+              background:none; text-align:left; font:inherit; color:inherit; cursor:pointer; }
         .ban-header { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
         .ban-flag { font-size:1.1em; }
         .ban-ip  { font-family:monospace; font-size:.88em; font-weight:600; }
@@ -340,24 +372,10 @@ class SecuritySentinelCard extends HTMLElement {
     this.shadowRoot.querySelector('#tab-banned')
       ?.addEventListener('click', () => this._setTab('banned'));
 
-    this.shadowRoot.querySelectorAll('.evt-summary').forEach(el => {
-      el.addEventListener('click', () => {
-        this._toggle(parseInt(el.closest('.evt-row').dataset.idx, 10));
-      });
-    });
-
-    this.shadowRoot.querySelectorAll('.ban-row-wrap').forEach(el => {
-      el.querySelector('.ban-info')?.addEventListener('click', () => {
-        this._toggleBanned(el.dataset.ip);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll('.unban-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._unbanIP(btn.dataset.ip);
-      });
-    });
+    this.shadowRoot.querySelector('#list')
+      ?.addEventListener('click', (event) => this._handleListClick(event));
+    this.shadowRoot.querySelector('#list')
+      ?.addEventListener('keydown', (event) => this._handleListKeydown(event));
   }
 
   getCardSize() { return 5; }
