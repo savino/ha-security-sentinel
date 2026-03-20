@@ -125,8 +125,11 @@ class SecuritySentinelCard extends HTMLElement {
   _handleListKeydown(event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
 
-    const actionTarget = event.target.closest('[data-action="toggle-event"]');
+    const actionTarget = event.target.closest('[data-action="toggle-event"], [data-action="toggle-banned"]');
     if (!actionTarget) return;
+    // Only intercept when the focused element itself is the toggle target,
+    // not when a child element (e.g. unban-btn) bubbles up to a parent toggle.
+    if (actionTarget !== event.target) return;
 
     event.preventDefault();
     this._handleListClick(event);
@@ -230,8 +233,8 @@ class SecuritySentinelCard extends HTMLElement {
 
       return `
         <div class="ban-row-wrap" data-ip="${escapeHtml(ip)}">
-          <div class="ban-row">
-            <button class="ban-info" type="button" data-action="toggle-banned" data-ip="${escapeHtml(ip)}" aria-expanded="${expanded}">
+          <div class="ban-row" role="button" tabindex="0" data-action="toggle-banned" data-ip="${escapeHtml(ip)}" aria-expanded="${expanded}">
+            <div class="ban-info">
               <div class="ban-header">
                 <span class="ban-flag">${flag}</span>
                 <span class="ban-ip">${escapeHtml(ip)}</span>
@@ -241,7 +244,7 @@ class SecuritySentinelCard extends HTMLElement {
               </div>
               ${bannedAt ? `<div class="ban-ts">\uD83D\uDD12 Banned: ${bannedAt}</div>` : ''}
               ${geo.city || geo.org || geo.isp ? `<div class="ban-geo-brief">${escapeHtml(geo.city || '')}${geo.city && (geo.org || geo.isp) ? ' \u2022 ' : ''}${escapeHtml(geo.org || geo.isp || '')}</div>` : ''}
-            </button>
+            </div>
             <button class="unban-btn" type="button" data-action="unban" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
           </div>
           ${detail}
@@ -315,10 +318,9 @@ class SecuritySentinelCard extends HTMLElement {
         /* Banned IPs */
         .ban-row-wrap { border:1px solid var(--divider-color,#e0e0e0); border-radius:6px; overflow:hidden; }
         .ban-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
-                   padding:8px 12px; background:var(--card-background-color,#fff); }
+                   padding:8px 12px; background:var(--card-background-color,#fff); cursor:pointer; }
         .ban-row:hover { background:var(--secondary-background-color,#f9f9f9); }
-        .ban-info { display:flex; flex-direction:column; gap:2px; flex:1; padding:0; border:none;
-              background:none; text-align:left; font:inherit; color:inherit; cursor:pointer; }
+        .ban-info { display:flex; flex-direction:column; gap:2px; flex:1; }
         .ban-header { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
         .ban-flag { font-size:1.1em; }
         .ban-ip  { font-family:monospace; font-size:.88em; font-weight:600; }
