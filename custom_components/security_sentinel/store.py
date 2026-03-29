@@ -21,6 +21,8 @@ class EventStore:
     def __init__(self, hass: HomeAssistant) -> None:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._events: list[dict[str, Any]] = []
+        # Per-IP traceroute results: {ip: [{"ip": ..., "lat": ..., ...}, ...]}
+        self._traceroute: dict[str, list[dict[str, Any]]] = {}
 
     async def async_load(self) -> None:
         """Load events from persistent storage."""
@@ -28,10 +30,20 @@ class EventStore:
         if data and isinstance(data.get("events"), list):
             self._events = data["events"]
             _LOGGER.debug("Loaded %d events from storage.", len(self._events))
+        if data and isinstance(data.get("traceroute"), dict):
+            self._traceroute = data["traceroute"]
+            _LOGGER.debug(
+                "Loaded traceroute data for %d IPs.", len(self._traceroute)
+            )
 
     async def async_save(self) -> None:
         """Persist events to storage (capped at MAX_STORED_EVENTS)."""
-        await self._store.async_save({"events": self._events[-MAX_STORED_EVENTS:]})
+        await self._store.async_save(
+            {
+                "events": self._events[-MAX_STORED_EVENTS:],
+                "traceroute": self._traceroute,
+            }
+        )
 
     def add_event(self, event: dict[str, Any]) -> None:
         """Add a new security event, stamping timestamp if missing."""
@@ -80,6 +92,18 @@ class EventStore:
                 if country and country not in ("Unknown", "Local", ""):
                     return geo
         return {}
+
+    # ------------------------------------------------------------------
+    # Traceroute cache
+    # ------------------------------------------------------------------
+
+    def set_traceroute(self, ip: str, hops: list[dict[str, Any]]) -> None:
+        """Store geo-enriched traceroute hops for *ip*."""
+        self._traceroute[ip] = hops
+
+    def get_traceroute(self, ip: str) -> list[dict[str, Any]]:
+        """Return stored traceroute hops for *ip*, or an empty list."""
+        return self._traceroute.get(ip, [])
 
     @staticmethod
     def _parse_ts(ts: str) -> float:
