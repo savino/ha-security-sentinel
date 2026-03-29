@@ -82,3 +82,7 @@ PRIVATE_IP_PREFIXES = (
     "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
     "172.30.", "172.31.", "192.168.", "127.", "::1", "fe80:",
 )
+
+# Map tab: event window and limit for 30-day history
+MAP_EVENTS_HOURS = 720   # 30 days
+MAP_EVENTS_LIMIT = 200
