@@ -39,9 +39,6 @@ def _ensure_lovelace_card_file(hass: HomeAssistant) -> bool:
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination = destination_dir / CARD_FILENAME
 
-    if destination.exists() and destination.stat().st_mtime >= source.stat().st_mtime:
-        return True
-
     shutil.copy2(source, destination)
     return True
 

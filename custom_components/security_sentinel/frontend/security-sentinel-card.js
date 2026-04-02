@@ -131,7 +131,25 @@ class SecuritySentinelCard extends HTMLElement {
   // 30-day event history exposed by the backend for the map tab
   _getAllMapEvents() {
     const s = this._state('sensor.security_sentinel_failed_logins');
-    return s?.attributes?.map_events || s?.attributes?.recent_events || [];
+    const fromEvents = s?.attributes?.map_events || s?.attributes?.recent_events || [];
+    if (fromEvents.length) return fromEvents;
+
+    // Fallback: build map points from banned-IP dossier when no recent event history is available
+    return this._getBannedIPs().map(entry => {
+      const ip = entry.ip || entry;
+      const events = entry.events || [];
+      const highestSeverity = events.reduce((worst, ev) => {
+        const sev = ev?.severity || 'low';
+        return (SEVERITY_ORDER[sev] ?? 0) > (SEVERITY_ORDER[worst] ?? 0) ? sev : worst;
+      }, 'low');
+      return {
+        ip,
+        geo: entry.geo || {},
+        severity: highestSeverity,
+        timestamp: entry.banned_at || events[0]?.timestamp || '',
+        detail: `Banned IP (${entry.attempt_count || events.length || 0} attempt(s))`,
+      };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -301,7 +319,8 @@ class SecuritySentinelCard extends HTMLElement {
           <button class="filter-btn${ia('time', 'month')}" data-filter-type="time" data-filter-value="month">Last Month</button>
         </div>
       </div>
-      <div id="sentinel-map"></div>`;
+      <div id="sentinel-map"></div>
+      <div id="map-note" class="map-note"></div>`;
   }
 
   // -------------------------------------------------------------------------
@@ -415,6 +434,7 @@ class SecuritySentinelCard extends HTMLElement {
                         background:var(--secondary-background-color,#f5f5f5); }
         .map-error   { padding:30px; text-align:center; color:var(--secondary-text-color,#888); font-size:.9em; line-height:1.6; }
         .map-loading { padding:30px; text-align:center; color:var(--secondary-text-color,#888); font-size:.9em; }
+        .map-note { margin-top:8px; text-align:center; color:var(--secondary-text-color,#888); font-size:.8em; }
       </style>
       ${isMap ? '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">' : ''}
       <ha-card>
@@ -595,11 +615,18 @@ class SecuritySentinelCard extends HTMLElement {
   _updateMapMarkers() {
     if (!this._map || !window.L) return;
     const L = window.L;
+    const note = this.shadowRoot?.querySelector('#map-note');
 
     this._mapLayers.forEach(l => { try { this._map.removeLayer(l); } catch (_) { /* layer already removed */ } });
     this._mapLayers = [];
 
     const { markers, traces } = this._getMapData();
+
+    if (note) {
+      note.textContent = markers.length || traces.length
+        ? ''
+        : 'No geolocated attacker IPs available yet. Markers appear when events or banned IP entries include coordinates.';
+    }
 
     // Traceroute polylines (rendered first, behind attack markers)
     for (const trace of traces) {
