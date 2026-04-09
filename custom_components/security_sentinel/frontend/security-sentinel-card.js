@@ -90,6 +90,9 @@ class SecuritySentinelCard extends HTMLElement {
     this._isLoadingMap = false;
     this._bannedIPsData = null;
     this._isLoadingBanned = false;
+    this._forceRender = true;
+    this._lastStateKey = '';
+    this._targetedIP = null;
   }
 
   static getStubConfig() {
@@ -164,7 +167,18 @@ class SecuritySentinelCard extends HTMLElement {
 
   // 30-day event history exposed by the backend for the map tab
   _getAllMapEvents() {
-    return this._mapData?.map_events || [];
+    const backendEvents = this._mapData?.map_events || [];
+    const bannedIps = this._getBannedIPs().map(entry => {
+      const ip = entry.ip || entry;
+      return {
+        ip,
+        geo: entry.geo || {},
+        severity: 'high',
+        timestamp: entry.banned_at || '',
+        detail: `Banned IP (${entry.attempt_count || 1} attempts)`
+      };
+    });
+    return [...backendEvents, ...bannedIps];
   }
 
   // -------------------------------------------------------------------------
@@ -172,18 +186,22 @@ class SecuritySentinelCard extends HTMLElement {
   // -------------------------------------------------------------------------
   _toggle(idx) {
     this._expanded.has(idx) ? this._expanded.delete(idx) : this._expanded.add(idx);
+    this._forceRender = true;
     this._render();
   }
 
   async _toggleBanned(ip) {
     if (this._bannedExpanded.has(ip)) {
       this._bannedExpanded.delete(ip);
+      this._forceRender = true;
       this._render();
     } else {
       this._bannedExpanded.add(ip);
+      this._forceRender = true;
       this._render();
       if (!this._dossiers[ip]) {
         this._dossiers[ip] = await this._fetchBannedDossier(ip);
+        this._forceRender = true;
         this._render();
       }
     }
@@ -201,6 +219,8 @@ class SecuritySentinelCard extends HTMLElement {
       this._mapLayers = [];
     }
     this._activeTab = tab;
+    if (tab !== 'map') this._targetedIP = null;
+    this._forceRender = true;
     this._render();
     if (tab === 'banned') {
       if (!this._bannedIPsData && !this._isLoadingBanned) {
@@ -208,6 +228,7 @@ class SecuritySentinelCard extends HTMLElement {
         this._bannedIPsData = await this._fetchBannedIPs();
         this._isLoadingBanned = false;
         if (this._activeTab === 'banned') {
+          this._forceRender = true;
           this._render();
         }
       }
@@ -228,7 +249,7 @@ class SecuritySentinelCard extends HTMLElement {
     this._mapFilter = { type, value };
     if (this._activeTab === 'map') {
       if (this._map) { this._updateMapFiltersUI(); this._updateMapMarkers(); }
-      else { this._render(); }
+      else { this._forceRender = true; this._render(); }
     }
   }
 
@@ -339,10 +360,12 @@ class SecuritySentinelCard extends HTMLElement {
                 <span class="arrow">${expanded ? '\u25B2' : '\u25BC'}</span>
               </div>
               ${bannedAt ? `<div class="ban-ts">\uD83D\uDD12 Banned: ${bannedAt}</div>` : ''}
-              ${geo.city || geo.org || geo.isp ? `<div class="ban-geo-brief">${escapeHtml(geo.city || '')}${geo.city && (geo.org || geo.isp) ? ' \u2022 ' : ''}${escapeHtml(geo.org || geo.isp || '')}</div>` : ''}
+              <div class="ban-geo-brief">${escapeHtml(geo.city || '')}${geo.city && (geo.org || geo.isp) ? ' \u2022 ' : ''}${escapeHtml(geo.org || geo.isp || '')}</div>
             </div>
-            <button class="unban-btn" type="button"
-                    data-action="unban" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
+            <div class="ban-actions">
+              <button class="show-map-btn" type="button" data-action="show-map" data-ip="${escapeHtml(ip)}">\uD83D\uDDFA\uFE0F Map</button>
+              <button class="unban-btn" type="button" data-action="unban" data-ip="${escapeHtml(ip)}">\uD83D\uDD13 Unban</button>
+            </div>
           </div>
           ${detail}
         </div>`;
@@ -355,15 +378,17 @@ class SecuritySentinelCard extends HTMLElement {
     return `
       <div class="map-filters">
         <div class="filter-group">
-          <span class="filter-label">Last</span>
-          <button class="filter-btn${ia('count', 10)}" data-filter-type="count" data-filter-value="10">10 IPs</button>
-          <button class="filter-btn${ia('count', 25)}" data-filter-type="count" data-filter-value="25">25 IPs</button>
-          <button class="filter-btn${ia('count', 50)}" data-filter-type="count" data-filter-value="50">50 IPs</button>
+          <span class="filter-label">Max IPs:</span>
+          <input type="number" id="map-ip-limit" value="${type === 'count' ? value : 50}" min="1" max="1000" class="filter-input" style="width:60px;">
+          <button class="filter-btn" id="map-ip-apply">Apply</button>
         </div>
         <div class="filter-group">
           <button class="filter-btn${ia('time', 'today')}" data-filter-type="time" data-filter-value="today">Today</button>
           <button class="filter-btn${ia('time', 'week')}"  data-filter-type="time" data-filter-value="week">Last Week</button>
           <button class="filter-btn${ia('time', 'month')}" data-filter-type="time" data-filter-value="month">Last Month</button>
+        </div>
+        <div class="filter-group" id="map-target-group" style="display:${this._targetedIP ? 'block' : 'none'}">
+          <button class="filter-btn active" id="map-clear-target">Clear Target: <span id="map-target-ip">${this._targetedIP || ''}</span></button>
         </div>
       </div>
       <div id="sentinel-map"></div>
@@ -380,6 +405,15 @@ class SecuritySentinelCard extends HTMLElement {
     const threatSensor  = this._state('sensor.security_sentinel_threat_level');
     const lastEvtSensor = this._state('sensor.security_sentinel_last_event');
     const bannedSensor  = this._state('sensor.security_sentinel_banned_ips');
+
+    const stateKey = `${failedSensor?.last_updated}|${threatSensor?.last_updated}|${lastEvtSensor?.last_updated}|${bannedSensor?.last_updated}|${this._activeTab}|${this._bannedExpanded.size}|${this._expanded.size}|${this._mapFilter.type}|${this._mapFilter.value}|${this._targetedIP || ''}`;
+
+    if (this._lastStateKey === stateKey && !this._forceRender) {
+      // Data unchanged, only DOM sync needed if not forcing
+      return;
+    }
+    this._lastStateKey = stateKey;
+    this._forceRender = false;
 
     const failedCount = failedSensor?.state  ?? '0';
     const threatLevel = threatSensor?.state  ?? 'low';
@@ -469,14 +503,16 @@ class SecuritySentinelCard extends HTMLElement {
         .ban-evt-type   { font-weight:600; grid-row:1; }
         .ban-evt-ts     { color:var(--secondary-text-color,#aaa); grid-row:1; text-align:right; }
         .ban-evt-detail { grid-column:1/-1; color:var(--secondary-text-color,#666); word-break:break-all; }
-        .unban-btn { padding:4px 12px; border-radius:6px; border:none; cursor:pointer;
-                     background:var(--error-color,#f44336); color:#fff; font-size:.78em; font-weight:bold;
+        .show-map-btn { padding:4px 12px; border-radius:6px; border:none; cursor:pointer;
+                     background:var(--primary-color,#03a9f4); color:#fff; font-size:.78em; font-weight:bold;
                      white-space:nowrap; flex-shrink:0; pointer-events:auto; position:relative; z-index:1; }
-        .unban-btn:hover { opacity:.85; }
+        .show-map-btn:hover { opacity:.85; }
+        .ban-actions { display:flex; gap:6px; }
         /* --- Map tab --- */
         .map-filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; align-items:center; }
         .filter-group { display:flex; gap:4px; align-items:center; }
         .filter-label { font-size:.78em; color:var(--secondary-text-color,#888); margin-right:2px; }
+        .filter-input { padding:3px 6px; border-radius:4px; border:1px solid var(--divider-color,#ccc); font-size:.8em; }
         .filter-btn { padding:3px 10px; border-radius:12px; border:1px solid var(--divider-color,#ccc);
                       background:var(--card-background-color,#fff); cursor:pointer;
                       font-size:.78em; font-weight:600; color:var(--secondary-text-color,#666); }
@@ -562,13 +598,40 @@ class SecuritySentinelCard extends HTMLElement {
       btn.addEventListener('click', e => { e.stopPropagation(); if (ip) this._unbanIP(ip); });
     });
 
+    // Show Map buttons
+    this.shadowRoot.querySelectorAll('[data-action="show-map"]').forEach(btn => {
+      const ip = btn.dataset.ip;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (ip) {
+          this._targetedIP = ip;
+          this._setTab('map');
+        }
+      });
+    });
+
     // Map filter buttons
     this.shadowRoot.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const raw = btn.dataset.filterValue;
-        const value = isNaN(Number(raw)) ? raw : Number(raw);
-        this._setMapFilter(btn.dataset.filterType, value);
-      });
+      if (btn.dataset.filterType) {
+        btn.addEventListener('click', () => {
+          this._targetedIP = null;
+          this._setMapFilter(btn.dataset.filterType, btn.dataset.filterValue);
+        });
+      }
+    });
+
+    this.shadowRoot.querySelector('#map-ip-apply')?.addEventListener('click', () => {
+      const val = parseInt(this.shadowRoot.querySelector('#map-ip-limit').value, 10);
+      if (!isNaN(val) && val > 0) {
+        this._targetedIP = null;
+        this._setMapFilter('count', val);
+      }
+    });
+
+    this.shadowRoot.querySelector('#map-clear-target')?.addEventListener('click', () => {
+      this._targetedIP = null;
+      this._updateMapFiltersUI();
+      this._updateMapMarkers();
     });
   }
 
@@ -607,16 +670,33 @@ class SecuritySentinelCard extends HTMLElement {
   _updateMapFiltersUI() {
     const { type, value } = this._mapFilter;
     this.shadowRoot.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.classList.toggle(
-        'active',
-        btn.dataset.filterType === type && String(btn.dataset.filterValue) === String(value)
-      );
+      if (btn.dataset.filterType) {
+        btn.classList.toggle(
+          'active',
+          btn.dataset.filterType === type && String(btn.dataset.filterValue) === String(value)
+        );
+      }
     });
+    const inp = this.shadowRoot.querySelector('#map-ip-limit');
+    if (inp && type === 'count') inp.value = value;
+    
+    const tg = this.shadowRoot.querySelector('#map-target-group');
+    if (tg) {
+      tg.style.display = this._targetedIP ? 'block' : 'none';
+      if (this._targetedIP) {
+         const tip = this.shadowRoot.querySelector('#map-target-ip');
+         if (tip) tip.textContent = this._targetedIP;
+      }
+    }
   }
 
   _getMapData() {
     const { type, value } = this._mapFilter;
-    const allEvents = this._getAllMapEvents();
+    let allEvents = this._getAllMapEvents();
+
+    if (this._targetedIP) {
+      allEvents = allEvents.filter(ev => ev.ip === this._targetedIP);
+    }
 
     // Apply filter
     let filtered;
@@ -651,8 +731,17 @@ class SecuritySentinelCard extends HTMLElement {
       if ((SEVERITY_ORDER[ev.severity] ?? 0) > (SEVERITY_ORDER[entry.severity] ?? 0)) entry.severity = ev.severity;
     }
 
-    // Traceroute paths from banned IPs (all bans, not filtered — paths are always relevant)
-    const traces = this._mapData?.traces || [];
+    // Traceroute paths from banned IPs
+    const rawTraces = this._mapData?.traces || [];
+    const traces = [];
+    for (const trace of rawTraces) {
+      if (this._targetedIP && trace.ip !== this._targetedIP) continue;
+      const hops = trace.traceroute_hops || [];
+      const validHops = hops.filter(h => h.lat != null && h.lon != null);
+      if (validHops.length >= 2) {
+        traces.push({ ip: trace.ip, hops: validHops, path: validHops.map(h => [h.lat, h.lon]) });
+      }
+    }
 
     return { markers: Array.from(ipMap.values()), traces };
   }
