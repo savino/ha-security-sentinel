@@ -85,6 +85,9 @@ class SecuritySentinelCard extends HTMLElement {
     this._map = null;
     this._mapLayers = [];
     this._mapFilter = { type: 'count', value: 10 };
+    this._dossiers = {};
+    this._mapData = null;
+    this._isLoadingMap = false;
   }
 
   static getStubConfig() {
@@ -128,28 +131,29 @@ class SecuritySentinelCard extends HTMLElement {
     return s?.attributes?.banned_ips || [];
   }
 
+  async _fetchBannedDossier(ip) {
+    if (!this._hass) return null;
+    try {
+      return await this._hass.callWS({ type: 'security_sentinel/get_banned_dossier', ip: ip });
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  }
+
+  async _fetchMapData() {
+    if (!this._hass) return null;
+    try {
+      return await this._hass.callWS({ type: 'security_sentinel/get_map_data' });
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  }
+
   // 30-day event history exposed by the backend for the map tab
   _getAllMapEvents() {
-    const s = this._state('sensor.security_sentinel_failed_logins');
-    const fromEvents = s?.attributes?.map_events || s?.attributes?.recent_events || [];
-    if (fromEvents.length) return fromEvents;
-
-    // Fallback: build map points from banned-IP dossier when no recent event history is available
-    return this._getBannedIPs().map(entry => {
-      const ip = entry.ip || entry;
-      const events = entry.events || [];
-      const highestSeverity = events.reduce((worst, ev) => {
-        const sev = ev?.severity || 'low';
-        return (SEVERITY_ORDER[sev] ?? 0) > (SEVERITY_ORDER[worst] ?? 0) ? sev : worst;
-      }, 'low');
-      return {
-        ip,
-        geo: entry.geo || {},
-        severity: highestSeverity,
-        timestamp: entry.banned_at || events[0]?.timestamp || '',
-        detail: `Banned IP (${entry.attempt_count || events.length || 0} attempt(s))`,
-      };
-    });
+    return this._mapData?.map_events || [];
   }
 
   // -------------------------------------------------------------------------
@@ -160,9 +164,18 @@ class SecuritySentinelCard extends HTMLElement {
     this._render();
   }
 
-  _toggleBanned(ip) {
-    this._bannedExpanded.has(ip) ? this._bannedExpanded.delete(ip) : this._bannedExpanded.add(ip);
-    this._render();
+  async _toggleBanned(ip) {
+    if (this._bannedExpanded.has(ip)) {
+      this._bannedExpanded.delete(ip);
+      this._render();
+    } else {
+      this._bannedExpanded.add(ip);
+      this._render();
+      if (!this._dossiers[ip]) {
+        this._dossiers[ip] = await this._fetchBannedDossier(ip);
+        this._render();
+      }
+    }
   }
 
   _unbanIP(ip) {
@@ -170,7 +183,7 @@ class SecuritySentinelCard extends HTMLElement {
     this._hass.callService('security_sentinel', 'unban_ip', { ip_address: ip });
   }
 
-  _setTab(tab) {
+  async _setTab(tab) {
     if (tab !== 'map' && this._map) {
       this._map.remove();
       this._map = null;
@@ -178,6 +191,17 @@ class SecuritySentinelCard extends HTMLElement {
     }
     this._activeTab = tab;
     this._render();
+    if (tab === 'map') {
+      if (!this._mapData && !this._isLoadingMap) {
+        this._isLoadingMap = true;
+        this._mapData = await this._fetchMapData();
+        this._isLoadingMap = false;
+        if (this._activeTab === 'map') {
+          this._updateMapFiltersUI();
+          this._updateMapMarkers();
+        }
+      }
+    }
   }
 
   _setMapFilter(type, value) {
@@ -250,8 +274,10 @@ class SecuritySentinelCard extends HTMLElement {
       const geo = entry.geo || {};
       const flag = countryFlag(geo.country_code || geo.country || '');
       const attempts = entry.attempt_count || 0;
-      const events = entry.events || [];
       const expanded = this._bannedExpanded.has(ip);
+      const dossier = this._dossiers[ip];
+      const events = dossier?.events || [];
+      const isLoading = expanded && !dossier;
 
       const geoSection = `
         <div class="geo-grid">
@@ -262,7 +288,8 @@ class SecuritySentinelCard extends HTMLElement {
           ${geo.timezone ? `<span>\uD83D\uDD50 Timezone</span><span>${escapeHtml(geo.timezone)}</span>` : ''}
           ${geo.lat != null ? `<span>\uD83D\uDDFA\uFE0F Coords</span><span>${geo.lat}, ${geo.lon}</span>` : ''}
         </div>`;
-      const historySection = events.length ? `
+      const historySection = isLoading ? `<div class="ban-history"><div class="ban-history-title">⏳ Loading history...</div></div>` :
+        (events.length ? `
         <div class="ban-history">
           <div class="ban-history-title">\uD83D\uDCC5 Access attempt history (${events.length})</div>
           ${events.map(ev => `
@@ -271,7 +298,7 @@ class SecuritySentinelCard extends HTMLElement {
               <span class="ban-evt-ts">${ev.timestamp ? new Date(ev.timestamp).toLocaleString() : ''}</span>
               <span class="ban-evt-detail">${escapeHtml(ev.detail || '')}</span>
             </div>`).join('')}
-        </div>` : '';
+        </div>` : '');
       const detail = expanded ? `
         <div class="ban-dossier">
           ${geoSection}
@@ -363,7 +390,7 @@ class SecuritySentinelCard extends HTMLElement {
         .stat   { display:flex; flex-direction:column; align-items:center; }
         .stat-v { font-size:1.35em; font-weight:bold; }
         .stat-l { font-size:.72em; color:var(--secondary-text-color,#888); text-transform:uppercase; }
-        .tabs   { display:flex; gap:4px; margin-bottom:8px; border-bottom:2px solid var(--divider-color,#e0e0e0); }
+        .tabs   { display:flex; gap:4px; margin-bottom:8px; border-bottom:2px solid var(--divider-color,#e0e0e0); flex-wrap:wrap; }
         .tab    { padding:6px 14px; cursor:pointer; font-size:.82em; font-weight:600; border-radius:4px 4px 0 0;
                   color:var(--secondary-text-color,#888); border:none; background:none; text-transform:uppercase; letter-spacing:.04em; }
         .tab.active { color:var(--primary-color,#03a9f4); border-bottom:2px solid var(--primary-color,#03a9f4); margin-bottom:-2px; }
@@ -600,14 +627,7 @@ class SecuritySentinelCard extends HTMLElement {
     }
 
     // Traceroute paths from banned IPs (all bans, not filtered — paths are always relevant)
-    const traces = [];
-    for (const ban of this._getBannedIPs()) {
-      const hops = ban.traceroute_hops || [];
-      const validHops = hops.filter(h => h.lat != null && h.lon != null);
-      if (validHops.length >= 2) {
-        traces.push({ ip: ban.ip, hops: validHops, path: validHops.map(h => [h.lat, h.lon]) });
-      }
-    }
+    const traces = this._mapData?.traces || [];
 
     return { markers: Array.from(ipMap.values()), traces };
   }

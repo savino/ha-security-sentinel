@@ -16,6 +16,7 @@ from .const import DOMAIN
 from .coordinator import SecuritySentinelCoordinator
 from .event_monitor import EventMonitor
 from .store import EventStore
+from .api import async_register_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "monitor": monitor,
         "store": store,
     }
+
+    async_register_api(hass)
 
     await coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -68,8 +68,6 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
         threat_level = _calculate_threat_level(recent)
         raw_banned = await self.hass.async_add_executor_job(self._read_banned_ips)
         banned_ips = await self._async_enrich_banned_ips(raw_banned)
-        # 30-day event history for the map tab (higher limit, longer window)
-        map_events = self._store.get_recent_events(hours=MAP_EVENTS_HOURS, limit=MAP_EVENTS_LIMIT)
         return {
             "failed_logins": failed_logins,
             "last_event": last,
@@ -77,7 +75,6 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
             "recent_events": recent,
             "total_events": len(self._store.get_all_events()),
             "banned_ips": banned_ips,
-            "map_events": map_events,
         }
 
     def _read_banned_ips(self) -> list[dict[str, Any]]:
@@ -121,8 +118,6 @@ class SecuritySentinelCoordinator(DataUpdateCoordinator):
                 **ban,
                 "geo": geo,
                 "attempt_count": len(ip_events),
-                "events": ip_events[:20],
-                "traceroute_hops": self._store.get_traceroute(ip),
             })
         return enriched
 

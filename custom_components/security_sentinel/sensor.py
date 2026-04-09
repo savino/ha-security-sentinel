@@ -89,7 +89,6 @@ class FailedLoginsSensor(_BaseSentinelSensor):
             "last_ip": last.get("ip") if last else None,
             "last_time": last.get("timestamp") if last else None,
             "recent_events": self._data.get("recent_events", [])[:10],
-            "map_events": self._data.get("map_events", []),
         }
 
 
