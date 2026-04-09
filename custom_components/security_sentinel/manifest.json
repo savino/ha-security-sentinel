@@ -1,7 +1,9 @@
 {
   "domain": "security_sentinel",
   "name": "Security Sentinel",
-  "codeowners": ["@savino"],
+  "codeowners": [
+    "@savino"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/savino/ha-security-sentinel",
@@ -9,5 +11,5 @@
   "issue_tracker": "https://github.com/savino/ha-security-sentinel/issues",
   "quality_scale": "custom",
   "requirements": [],
-  "version": "0.2.4"
+  "version": "0.2.5"
 }
