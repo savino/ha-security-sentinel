@@ -88,6 +88,8 @@ class SecuritySentinelCard extends HTMLElement {
     this._dossiers = {};
     this._mapData = null;
     this._isLoadingMap = false;
+    this._bannedIPsData = null;
+    this._isLoadingBanned = false;
   }
 
   static getStubConfig() {
@@ -127,8 +129,17 @@ class SecuritySentinelCard extends HTMLElement {
   }
 
   _getBannedIPs() {
-    const s = this._state('sensor.security_sentinel_banned_ips');
-    return s?.attributes?.banned_ips || [];
+    return this._bannedIPsData?.banned_ips || [];
+  }
+
+  async _fetchBannedIPs() {
+    if (!this._hass) return null;
+    try {
+      return await this._hass.callWS({ type: 'security_sentinel/get_banned_ips' });
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
   }
 
   async _fetchBannedDossier(ip) {
@@ -191,7 +202,16 @@ class SecuritySentinelCard extends HTMLElement {
     }
     this._activeTab = tab;
     this._render();
-    if (tab === 'map') {
+    if (tab === 'banned') {
+      if (!this._bannedIPsData && !this._isLoadingBanned) {
+        this._isLoadingBanned = true;
+        this._bannedIPsData = await this._fetchBannedIPs();
+        this._isLoadingBanned = false;
+        if (this._activeTab === 'banned') {
+          this._render();
+        }
+      }
+    } else if (tab === 'map') {
       if (!this._mapData && !this._isLoadingMap) {
         this._isLoadingMap = true;
         this._mapData = await this._fetchMapData();
@@ -368,7 +388,6 @@ class SecuritySentinelCard extends HTMLElement {
     const lastEvtType = lastEvtSensor?.state ?? 'None';
     const bannedCount = bannedSensor?.state  ?? '0';
     const events    = this._getEvents();
-    const bannedIPs = this._getBannedIPs();
 
     const isEvents = this._activeTab === 'events';
     const isBanned = this._activeTab === 'banned';
@@ -376,7 +395,13 @@ class SecuritySentinelCard extends HTMLElement {
 
     let tabContent = '';
     if (isEvents) tabContent = this._renderEventsTab(events);
-    else if (isBanned) tabContent = this._renderBannedTab(bannedIPs);
+    else if (isBanned) {
+      if (!this._bannedIPsData && this._isLoadingBanned) {
+        tabContent = '<div class="no-events">⌛ Loading banned IPs...</div>';
+      } else {
+        tabContent = this._renderBannedTab(this._getBannedIPs());
+      }
+    }
     else if (isMap) tabContent = this._renderMapTab();
 
     this.shadowRoot.innerHTML = `
@@ -480,7 +505,7 @@ class SecuritySentinelCard extends HTMLElement {
             Recent Events${events.length > 0 ? `<span class="tab-badge">${events.length}</span>` : ''}
           </button>
           <button class="tab${isBanned ? ' active' : ''}" id="tab-banned">
-            Banned IPs${bannedIPs.length > 0 ? `<span class="tab-badge" style="background:#607D8B">${bannedIPs.length}</span>` : ''}
+            Banned IPs${parseInt(bannedCount) > 0 ? `<span class="tab-badge" style="background:#607D8B">${bannedCount}</span>` : ''}
           </button>
           <button class="tab${isMap ? ' active' : ''}" id="tab-map">
             \uD83D\uDDFA\uFE0F Map

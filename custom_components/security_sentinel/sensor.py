@@ -160,5 +160,4 @@ class BannedIPsSensor(_BaseSentinelSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
             "component_version": VERSION,
-            "banned_ips": self._data.get("banned_ips", []),
         }

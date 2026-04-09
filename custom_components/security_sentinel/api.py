@@ -18,6 +18,7 @@ def async_register_api(hass: HomeAssistant) -> None:
     """Register the websocket API."""
     websocket_api.async_register_command(hass, ws_get_map_data)
     websocket_api.async_register_command(hass, ws_get_banned_dossier)
+    websocket_api.async_register_command(hass, ws_get_banned_ips)
 
 
 @websocket_api.websocket_command(
@@ -87,5 +88,32 @@ def ws_get_banned_dossier(
             "events": ip_events[:20],
             "traceroute_hops": store.get_traceroute(ip),
             "geo": store.get_latest_geo_for_ip(ip),
+        },
+    )
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "security_sentinel/get_banned_ips",
+    }
+)
+@callback
+def ws_get_banned_ips(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get banned ips command."""
+    if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Integration not configured")
+        return
+
+    entry_id = list(hass.data[DOMAIN].keys())[0]
+    entry_data = hass.data[DOMAIN][entry_id]
+    coordinator: SecuritySentinelCoordinator = entry_data["coordinator"]
+    
+    banned_ips = coordinator.data.get("banned_ips", []) if coordinator.data else []
+    
+    connection.send_result(
+        msg["id"],
+        {
+            "banned_ips": banned_ips,
         },
     )
